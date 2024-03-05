@@ -1,0 +1,12 @@
+{
+	"name": "financial-forecast-deploy",
+	"main": "index.ts",
+	"devDependencies": {
+		"@types/node": "^18"
+	},
+	"dependencies": {
+		"@pulumi/synced-folder": "^0.11.1",
+		"@pulumi/gcp": "^7.0.0",
+		"@pulumi/pulumi": "^3.0.0"
+	}
+}
