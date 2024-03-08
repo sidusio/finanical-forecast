@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { scaleUtc, scaleLinear, extent, max, line, axisBottom } from "d3";
+	import * as d3 from 'd3';
+	import { afterUpdate } from 'svelte';
 
 	interface DataPoint {
 		year: number;
@@ -7,65 +8,68 @@
 	}
 	export let forecast: Array<DataPoint>;
 
+	$: data = forecast.map(({ savings, year }) => ({
+		year: new Date(year, 1),
+		savings
+	}));
+
 	let width = 800;
 	let height = 600;
 
+	let svg: SVGElement;
+
 	const margin = { top: 20, right: 20, bottom: 20, left: 180 };
 
+	$: [minYear, maxYear] = d3.extent(data, (d) => d.year);
+	$: xScale = d3.scaleUtc([minYear ?? 0, maxYear ?? 0], [margin.left, width - margin.right]);
+	$: yScale = d3.scaleLinear(
+		[0, d3.max(data, (d) => d.savings) ?? 1],
+		[height - margin.bottom, margin.top]
+	);
 
-	// @ts-ignore - why does d3 provided utility function not work here?
-	$: xScale = scaleUtc(extent(forecast, (d) => d.year), [margin.left, width - margin.right]);
-	$: yScale = scaleLinear([0, max(forecast, (d) => d.savings) ?? 1], [height - margin.bottom, margin.top]);
-
-	$: savingsLine = line<DataPoint>()
+	$: savingsLine = d3
+		.line<{ year: Date; savings: number }>()
 		.x((d) => xScale(d.year))
 		.y((d) => yScale(d.savings));
+
+	afterUpdate(() => {
+		const s = d3.select(svg);
+
+		const xAxis = d3.axisBottom(xScale);
+		s.select<SVGGElement>('.x-axis').call(xAxis);
+
+		const yAxis = d3.axisLeft(yScale);
+		yAxis.tickFormat((d) =>
+			d3
+				.formatLocale({
+					decimal: ',',
+					thousands: ' ',
+					grouping: [3],
+					currency: ['', ' tkr']
+				})
+				.format('$,')(d.valueOf() / 1000)
+		);
+		s.select<SVGGElement>('.y-axis').call(yAxis);
+	});
 </script>
 
-<!--
-  // Add the y-axis, remove the domain line, add grid lines and a label.
-  svg.append("g")
-      .attr("transform", `translate(${marginLeft},0)`)
-      .call(d3.axisLeft(y).ticks(height / 40))
-      .call(g => g.select(".domain").remove())
-      .call(g => g.selectAll(".tick line").clone()
-          .attr("x2", width - marginLeft - marginRight)
-          .attr("stroke-opacity", 0.1))
-      .call(g => g.append("text")
-          .attr("x", -marginLeft)
-          .attr("y", 10)
-          .attr("fill", "currentColor")
-          .attr("text-anchor", "start")
-          .text("↑ Daily close ($)"));
-
-
--->
-
-<svg {width} {height} viewBox="0 0 ${width} ${height}">
+<svg bind:this={svg} {width} {height} viewBox="0 0 {width} {height}">
 	<!-- Add the x-axis. -->
-	<g transform={`translate(0,${height - margin.bottom})`}>
-		{@html axisBottom(xScale).ticks(width / 80).tickSizeOuter(0) }
-	</g>
+	<g class="x-axis" transform="translate(0,{height - margin.bottom})"> kr </g>
 	<!-- Add the y-axis, remove the domain line, add grid lines and a label. -->
-	<g transform="{`translate(${margin.left},0)`}">
-		{#each forecast as d}
-			<text
-				text-anchor="end"
-				x="-3"
-				dy=".3em"
-			>
-				{d.year}
-			</text>
-		{/each}
-	</g>
+	<g class="y-axis" transform="translate({margin.left},0)"></g>
 	<!-- Add the path for the line -->
-	<path d={savingsLine(forecast)} fill="none" stroke="steelblue" stroke-width="1.5" />
+	<path d={savingsLine(data)} fill="none" stroke="steelblue" stroke-width="1.5" />
 </svg>
 
 <style>
+	.x-axis,
+	.y-axis {
+		user-select: none;
+	}
 	svg {
-      max-width: 100%;
-			height: auto;
-			/*height: intrinsic;*/
+		max-width: 100%;
+		height: auto;
+		/*height: intrinsic;*/
 	}
 </style>

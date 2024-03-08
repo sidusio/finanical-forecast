@@ -35,7 +35,7 @@ export const bucketEndpoint = pulumi.concat(
 const backendBucket = new gcp.compute.BackendBucket('financial-forecast-backend-bucket', {
 	bucketName: bucket.name,
 	description: 'Backend bucket for financial-forecast-static-site',
-	enableCdn: false,
+	enableCdn: false
 	//compressionMode: 'AUTOMATIC'
 });
 
