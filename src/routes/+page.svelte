@@ -1,150 +1,68 @@
 <script lang="ts">
 	import ForecastGraph from '$lib/ForecastGraph.svelte';
+	import { type Parameters, simulateYears, type YearState } from '$lib/simulation';
 
-	const data = [
-		{
-			year: 2021,
-			savings: 1000
-		},
-		{
-			year: 2022,
-			savings: 2000
-		},
-		{
-			year: 2023,
-			savings: 3000
-		},
-		{
-			year: 2024,
-			savings: 4000
-		},
-		{
-			year: 2025,
-			savings: 5000
-		},
-		{
-			year: 2026,
-			savings: 6000
-		},
-		{
-			year: 2027,
-			savings: 7000
-		},
-		{
-			year: 2028,
-			savings: 8000
-		},
-		{
-			year: 2029,
-			savings: 9000
-		},
-		{
-			year: 2030,
-			savings: 10000
-		},
-		{
-			year: 2031,
-			savings: 11000
-		},
-		{
-			year: 2032,
-			savings: 12000
-		},
-		{
-			year: 2033,
-			savings: 13000
-		},
-		{
-			year: 2034,
-			savings: 14000
-		},
-		{
-			year: 2035,
-			savings: 15000
-		},
-		{
-			year: 2036,
-			savings: 16000
-		},
-		{
-			year: 2037,
-			savings: 17000
-		},
-		{
-			year: 2038,
-			savings: 18000
-		},
-		{
-			year: 2039,
-			savings: 19000
-		},
-		{
-			year: 2040,
-			savings: 20000
-		},
-		{
-			year: 2041,
-			savings: 21000
-		},
-		{
-			year: 2042,
-			savings: 22000
-		},
-		{
-			year: 2043,
-			savings: 23000
-		},
-		{
-			year: 2044,
-			savings: 24000
-		},
-		{
-			year: 2045,
-			savings: 25000
-		},
-		{
-			year: 2046,
-			savings: 26000
-		},
-		{
-			year: 2047,
-			savings: 27000
-		},
-		{
-			year: 2048,
-			savings: 28000
-		},
-		{
-			year: 2049,
-			savings: 29000
-		},
-		{
-			year: 2050,
-			savings: 30000
-		},
-		{
-			year: 2051,
-			savings: 31000
-		},
-		{
-			year: 2052,
-			savings: 32000
-		},
-		{
-			year: 2053,
-			savings: 42000
-		},
-		{
-			year: 2054,
-			savings: 142000
-		}
-	];
+	const parameters: Parameters = {
+		inflationRate: 0.025,
+		iskInterestRate: 0.08,
+		iskTax: 0.01086,
+		cashFlows: [
+			{
+				startYear: 2024 + 0,
+				endYear: 2024 + 8,
+				yearlyNetCashFlow: 38500 * 12,
+				// publicPensionContributing: true,
+				// servicePensionContribution: 4.5
+			},
+			{
+				startYear: 2024 + 0,
+				endYear: 2024 + 8,
+				yearlyNetCashFlow: 2755 * 12,
+			  // publicPensionContributing: false,
+				// servicePensionContribution: 100
+			},
+			{
+				startYear: 2024 + 0,
+				endYear: 2024 + 8,
+				yearlyNetCashFlow: -2755 * 12,
+				// publicPensionContributing: false,
+				// servicePensionContribution: 0
+			},
+			{
+				startYear: 2024 + 0,
+				endYear: 2024 + 50,
+				yearlyNetCashFlow: -15000 * 12,
+				// pensionContributing: false,
+				// publicPensionContributing: false,
+				// servicePensionContribution: 0
+			}
+		]
+	};
+	const startState: YearState = {
+		year: 2024,
+		iskSavings: 1000000,
+		compoundedInflation: 1,
+		cashFlow: 0
+	};
+
+	$: results = simulateYears(74, startState, parameters);
+	$: data = results.map((res) => {
+		return {
+			year: res.year,
+			savings: res.iskSavings,
+			cashFlow: res.cashFlow
+		};
+	});
 </script>
 
 <section>TODO scenario drawer</section>
-<section>TODO scanrio editor</section>
+<section>TODO scenario editor</section>
 <section>
 	<ForecastGraph forecast={data} />
+</section>
+<section>
+	<h2>Results</h2>
+	<pre>{JSON.stringify(results, null, 2)}</pre>
 </section>
 
 <style lang="scss">
