@@ -1,17 +1,13 @@
 <script lang="ts">
 	import * as d3 from 'd3';
 	import { afterUpdate } from 'svelte';
+	import type { YearState } from '$lib/simulation';
 
-	interface DataPoint {
-		year: number;
-		savings: number;
-		cashFlow: number;
-	}
-	export let forecast: Array<DataPoint>;
+	export let simulation: Array<YearState>;
 
-	$: data = forecast.map(({ savings, year, cashFlow }) => ({
+	$: data = simulation.map(({ iskSavings, year, cashFlow }) => ({
 		year: new Date(year, 1),
-		savings,
+		savings: iskSavings,
 		cashFlow
 	}));
 

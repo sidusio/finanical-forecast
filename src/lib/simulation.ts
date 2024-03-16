@@ -32,6 +32,61 @@ export interface TimeBoundCashFlow {
 	//servicePensionContribution: number;
 }
 
+export interface Scenario {
+	parameters: Parameters;
+	startState: YearState;
+	endYear: number;
+}
+
+export function defaultScenario(): Scenario {
+	const currentYear = new Date().getFullYear();
+	return {
+		parameters: {
+			inflationRate: 0.025,
+			iskInterestRate: 0.08,
+			iskTax: 0.01086,
+			cashFlows: [
+				{
+					startYear: currentYear,
+					endYear: currentYear + 8,
+					yearlyNetCashFlow: 38500 * 12
+					// publicPensionContributing: true,
+					// servicePensionContribution: 4.5
+				},
+				{
+					startYear: currentYear,
+					endYear: currentYear + 8,
+					yearlyNetCashFlow: 2755 * 12
+					// publicPensionContributing: false,
+					// servicePensionContribution: 100
+				},
+				{
+					startYear: currentYear,
+					endYear: currentYear + 8,
+					yearlyNetCashFlow: -2755 * 12
+					// publicPensionContributing: false,
+					// servicePensionContribution: 0
+				},
+				{
+					startYear: currentYear,
+					endYear: currentYear + 50,
+					yearlyNetCashFlow: -15000 * 12
+					// pensionContributing: false,
+					// publicPensionContributing: false,
+					// servicePensionContribution: 0
+				}
+			]
+		},
+		startState: {
+			year: currentYear,
+			iskSavings: 1000000,
+			compoundedInflation: 1,
+			cashFlow: 0
+		},
+		endYear: 2100
+	};
+}
+
 function simulateYear(state: YearState, params: Parameters): YearState {
 	const newYear = state.year + 1;
 
@@ -66,10 +121,10 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	};
 }
 
-export function simulateYears(years: number, state: YearState, params: Parameters): YearState[] {
-	const results = [state];
-	for (let i = 0; i < years; i++) {
-		const newState = simulateYear(results[i], params);
+export function simulate({ endYear, startState, parameters }: Scenario): YearState[] {
+	const results = [startState];
+	for (let i = 0; i + startState.year < endYear; i++) {
+		const newState = simulateYear(results[i], parameters);
 		results.push(newState);
 	}
 	return results;
