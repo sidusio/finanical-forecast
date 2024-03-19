@@ -22,12 +22,19 @@ export interface Parameters {
 	iskInterestRate: number;
 	iskTax: number;
 	cashFlows: TimeBoundCashFlow[];
+	countyTaxRate: number;
+	churchTax: boolean;
+	churchTaxRate: number;
+	stateTaxRate: number;
+	stateTaxThreshold: number;
+	taxFreeThreshold: number;
 }
 
 export interface TimeBoundCashFlow {
 	startYear: number; // Inclusive
-	endYear: number; // Exclusive
-	yearlyNetCashFlow: number;
+	endYear?: number; // Exclusive
+	yearlyCashFlow: number;
+	kind: 'GrossTaxableEarnedIncome' | 'NetExpense';
 	//publicPensionContributing: boolean;
 	//servicePensionContribution: number;
 }
@@ -45,32 +52,26 @@ export function defaultScenario(): Scenario {
 			inflationRate: 0.025,
 			iskInterestRate: 0.08,
 			iskTax: 0.01086,
+			countyTaxRate: 0.325, // Strängnäs:0.325, GBG: 0.326
+			churchTax: false,
+			churchTaxRate: 0.01045,
+			stateTaxRate: 0.2,
+			stateTaxThreshold: 52000 * 12,
+			taxFreeThreshold: 24238,
 			cashFlows: [
 				{
 					startYear: currentYear,
-					endYear: currentYear + 8,
-					yearlyNetCashFlow: 38500 * 12
+					endYear: currentYear + 9,
+					yearlyCashFlow: 52000 * 12,
+					kind: 'GrossTaxableEarnedIncome'
 					// publicPensionContributing: true,
 					// servicePensionContribution: 4.5
 				},
 				{
 					startYear: currentYear,
-					endYear: currentYear + 8,
-					yearlyNetCashFlow: 2755 * 12
-					// publicPensionContributing: false,
-					// servicePensionContribution: 100
-				},
-				{
-					startYear: currentYear,
-					endYear: currentYear + 8,
-					yearlyNetCashFlow: -2755 * 12
-					// publicPensionContributing: false,
-					// servicePensionContribution: 0
-				},
-				{
-					startYear: currentYear,
-					endYear: currentYear + 50,
-					yearlyNetCashFlow: -15000 * 12
+					endYear: undefined,
+					yearlyCashFlow: 15000 * 12,
+					kind: 'NetExpense'
 					// pensionContributing: false,
 					// publicPensionContributing: false,
 					// servicePensionContribution: 0
@@ -83,7 +84,7 @@ export function defaultScenario(): Scenario {
 			compoundedInflation: 1,
 			cashFlow: 0
 		},
-		endYear: 2100
+		endYear: 2080
 	};
 }
 
@@ -94,11 +95,47 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const compoundedInflationYearlyAverage =
 		state.compoundedInflation * (1 + params.inflationRate / 2);
 
-	const yearlyCashFlows = params.cashFlows.filter(
-		(cf) => cf.startYear <= newYear && cf.endYear > newYear
-	);
-	const yearlyCashFlow = yearlyCashFlows.reduce((acc, cf) => acc + cf.yearlyNetCashFlow, 0);
-	const yearlyCashFlowPostInflation = yearlyCashFlow * compoundedInflationYearlyAverage;
+	const thisYearsStateTaxThreshold = params.stateTaxThreshold * compoundedInflationYearlyAverage;
+	const thisYearsTaxFreeThreshold = params.taxFreeThreshold * compoundedInflationYearlyAverage;
+
+	const yearlyCashFlows = params.cashFlows.filter(({ startYear, endYear }) => {
+		if (startYear > newYear) return false;
+		if (endYear === undefined) return true;
+		return endYear > newYear;
+	});
+
+	const yearlyGrossTaxableEarnedIncomePostInflation =
+		yearlyCashFlows
+			.filter(({ kind }) => kind === 'GrossTaxableEarnedIncome')
+			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) * compoundedInflationYearlyAverage;
+
+	const thisYearCountyTaxBracketRate =
+		params.countyTaxRate + (params.churchTax ? params.churchTaxRate : 0);
+	const thisYearCountyTaxBracket =
+		Math.max(
+			Math.min(yearlyGrossTaxableEarnedIncomePostInflation, thisYearsStateTaxThreshold) -
+				thisYearsTaxFreeThreshold,
+			0
+		) * thisYearCountyTaxBracketRate;
+
+	const thisYearStateTaxBracketRate = thisYearCountyTaxBracketRate + params.stateTaxRate;
+	const thisYearStateTaxBracket =
+		(Math.max(yearlyGrossTaxableEarnedIncomePostInflation, thisYearsStateTaxThreshold) -
+			thisYearsStateTaxThreshold) *
+		thisYearStateTaxBracketRate;
+
+	const yearlyNetIncomePostInflation =
+		yearlyGrossTaxableEarnedIncomePostInflation -
+		thisYearCountyTaxBracket -
+		thisYearStateTaxBracket;
+
+	const yearlyNetExpensePostInflation =
+		yearlyCashFlows
+			.filter(({ kind }) => kind === 'NetExpense')
+			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) * compoundedInflationYearlyAverage;
+
+	const yearlyNetCashFlowPostInflation =
+		yearlyNetIncomePostInflation - yearlyNetExpensePostInflation;
 
 	// const publicPensionContributingCashFlows = yearlyCashFlows.filter(cf => cf.publicPensionContributing);
 	// const publicPensionContributingCashFlow = publicPensionContributingCashFlows.reduce((acc, cf) => acc + cf.yearlyNetCashFlow, 0);
@@ -106,16 +143,16 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	// const yearlyIncomePensionRights = publicPensionContributingCashFlow * 0.16; // TODO: This should be calculated
 	// const yearlyPremiumPensionRights = publicPensionContributingCashFlow * 0.025;
 
-	const iskSavingsYearlyAverage = state.iskSavings + yearlyCashFlowPostInflation / 2;
+	const iskSavingsYearlyAverage = state.iskSavings + yearlyNetCashFlowPostInflation / 2;
 	const iskInterest = iskSavingsYearlyAverage * params.iskInterestRate;
 	const iskTax = iskSavingsYearlyAverage * params.iskTax;
-	const newSavings = state.iskSavings + yearlyCashFlowPostInflation + iskInterest - iskTax;
+	const newSavings = state.iskSavings + yearlyNetCashFlowPostInflation + iskInterest - iskTax;
 
 	return {
 		year: state.year + 1,
 		iskSavings: Math.floor(newSavings),
 		compoundedInflation: compoundedInflation,
-		cashFlow: yearlyCashFlow
+		cashFlow: yearlyNetCashFlowPostInflation
 		// premiumPensionRights: state.premiumPensionRights,
 		// servicePensionSavings: state.servicePensionSavings,
 	};
