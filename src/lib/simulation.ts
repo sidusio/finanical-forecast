@@ -12,8 +12,8 @@ export interface YearState {
 	iskSavings: number;
 	compoundedInflation: number;
 	cashFlow: number;
-	//incomePensionRights: number;
-	//premiumPensionRights: number;
+	incomePensionRights: number;
+	premiumPensionRights: number;
 	//servicePensionSavings: number;
 }
 
@@ -28,6 +28,11 @@ export interface Parameters {
 	stateTaxRate: number;
 	stateTaxThreshold: number;
 	taxFreeThreshold: number;
+	publicPensionContributionThreshold: number;
+	incomePensionContributionRate: number;
+	incomePensionRate: number;
+	premiumPensionContributionRate: number;
+	premiumPensionRate: number;
 }
 
 export interface TimeBoundCashFlow {
@@ -35,7 +40,7 @@ export interface TimeBoundCashFlow {
 	endYear?: number; // Exclusive
 	yearlyCashFlow: number;
 	kind: 'GrossTaxableEarnedIncome' | 'NetExpense';
-	//publicPensionContributing: boolean;
+	publicPensionContributing: boolean; // Only used for GrossTaxableEarnedIncome
 	//servicePensionContribution: number;
 }
 
@@ -58,21 +63,26 @@ export function defaultScenario(): Scenario {
 			stateTaxRate: 0.2,
 			stateTaxThreshold: 52000 * 12,
 			taxFreeThreshold: 24238,
+			publicPensionContributionThreshold: 571500,
+			incomePensionContributionRate: 0.16,
+			incomePensionRate: 0.033,
+			premiumPensionContributionRate: 0.025,
+			premiumPensionRate: 0.074,
 			cashFlows: [
 				{
 					startYear: currentYear,
 					endYear: currentYear + 9,
 					yearlyCashFlow: 52000 * 12,
-					kind: 'GrossTaxableEarnedIncome'
-					// publicPensionContributing: true,
+					kind: 'GrossTaxableEarnedIncome',
+					publicPensionContributing: true
 					// servicePensionContribution: 4.5
 				},
 				{
 					startYear: currentYear,
 					endYear: undefined,
 					yearlyCashFlow: 15000 * 12,
-					kind: 'NetExpense'
-					// pensionContributing: false,
+					kind: 'NetExpense',
+					publicPensionContributing: false
 					// publicPensionContributing: false,
 					// servicePensionContribution: 0
 				}
@@ -82,7 +92,9 @@ export function defaultScenario(): Scenario {
 			year: currentYear,
 			iskSavings: 1000000,
 			compoundedInflation: 1,
-			cashFlow: 0
+			cashFlow: 0,
+			premiumPensionRights: 0,
+			incomePensionRights: 0
 		},
 		endYear: 2080
 	};
@@ -103,6 +115,33 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 		if (endYear === undefined) return true;
 		return endYear > newYear;
 	});
+
+	const yearlyGrossPublicPensionContributingIncomePostInflation =
+		Math.min(
+			yearlyCashFlows
+				.filter(
+					({ kind, publicPensionContributing }) =>
+						kind === 'GrossTaxableEarnedIncome' && publicPensionContributing
+				)
+				.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0),
+			params.publicPensionContributionThreshold
+		) * compoundedInflationYearlyAverage;
+
+	const incomePensionContributionPostInflation =
+		yearlyGrossPublicPensionContributingIncomePostInflation * params.incomePensionContributionRate;
+	const premiumPensionContributionPostInflation =
+		yearlyGrossPublicPensionContributingIncomePostInflation * params.premiumPensionContributionRate;
+
+	const incomePensionRights =
+		(state.incomePensionRights + incomePensionContributionPostInflation / 2) *
+			(1 + params.incomePensionRate) +
+		incomePensionContributionPostInflation / 2;
+	const premiumPensionRights =
+		(state.premiumPensionRights + premiumPensionContributionPostInflation / 2) *
+			(1 + params.premiumPensionRate) +
+		premiumPensionContributionPostInflation / 2;
+
+	// TODO: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
 
 	const yearlyGrossTaxableEarnedIncomePostInflation =
 		yearlyCashFlows
@@ -152,8 +191,9 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 		year: state.year + 1,
 		iskSavings: Math.floor(newSavings),
 		compoundedInflation: compoundedInflation,
-		cashFlow: yearlyNetCashFlowPostInflation
-		// premiumPensionRights: state.premiumPensionRights,
+		cashFlow: yearlyNetCashFlowPostInflation,
+		incomePensionRights: incomePensionRights,
+		premiumPensionRights: premiumPensionRights
 		// servicePensionSavings: state.servicePensionSavings,
 	};
 }

@@ -5,11 +5,14 @@
 
 	export let simulation: Array<YearState>;
 
-	$: data = simulation.map(({ iskSavings, year, cashFlow }) => ({
-		year: new Date(year, 1),
-		savings: iskSavings,
-		cashFlow
-	}));
+	$: data = simulation.map(
+		({ iskSavings, year, cashFlow, premiumPensionRights, incomePensionRights }) => ({
+			year: new Date(year, 1),
+			savings: iskSavings,
+			cashFlow,
+			pensionRights: premiumPensionRights + incomePensionRights
+		})
+	);
 
 	export let width = 800;
 	export let height = 600;
@@ -22,8 +25,8 @@
 	$: xScale = d3.scaleUtc([minYear ?? 0, maxYear ?? 0], [margin.left, width - margin.right]);
 	$: yScale = d3.scaleLinear(
 		[
-			d3.min(data, (d) => Math.min(d.cashFlow, d.savings)) ?? 0,
-			d3.max(data, (d) => Math.max(d.cashFlow, d.savings)) ?? 1
+			d3.min(data, (d) => Math.min(d.cashFlow, d.savings, d.pensionRights)) ?? 0,
+			d3.max(data, (d) => Math.max(d.cashFlow, d.savings, d.pensionRights)) ?? 1
 		],
 		[height - margin.bottom, margin.top]
 	);
@@ -32,6 +35,11 @@
 		.line<{ year: Date; savings: number }>()
 		.x((d) => xScale(d.year))
 		.y((d) => yScale(d.savings));
+
+	$: pensionRightsLine = d3
+		.line<{ year: Date; pensionRights: number }>()
+		.x((d) => xScale(d.year))
+		.y((d) => yScale(d.pensionRights));
 
 	$: cashFlowLine = d3
 		.line<{ year: Date; cashFlow: number }>()
@@ -67,6 +75,7 @@
 	<!-- Add the path for the line -->
 	<path d={savingsLine(data)} fill="none" stroke="steelblue" stroke-width="1.5" />
 	<path d={cashFlowLine(data)} fill="none" stroke="green" stroke-width="1.5" />
+	<path d={pensionRightsLine(data)} fill="none" stroke="red" stroke-width="1.5" />
 </svg>
 
 <style>
