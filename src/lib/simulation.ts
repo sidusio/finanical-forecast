@@ -9,6 +9,7 @@
 
 export interface YearState {
 	year: number;
+	age: number;
 	iskSavings: number;
 	compoundedInflation: number;
 	cashFlow: number;
@@ -33,6 +34,9 @@ export interface Parameters {
 	incomePensionRate: number;
 	premiumPensionContributionRate: number;
 	premiumPensionRate: number;
+	statePensionAge: number;
+	generalLifeExpectancy: number;
+
 }
 
 export interface TimeBoundCashFlow {
@@ -68,6 +72,8 @@ export function defaultScenario(): Scenario {
 			incomePensionRate: 0.033,
 			premiumPensionContributionRate: 0.025,
 			premiumPensionRate: 0.074,
+			statePensionAge: 70,
+			generalLifeExpectancy: 80,
 			cashFlows: [
 				{
 					startYear: currentYear,
@@ -90,6 +96,7 @@ export function defaultScenario(): Scenario {
 		},
 		startState: {
 			year: currentYear,
+			age: 30,
 			iskSavings: 1000000,
 			compoundedInflation: 1,
 			cashFlow: 0,
@@ -102,6 +109,7 @@ export function defaultScenario(): Scenario {
 
 function simulateYear(state: YearState, params: Parameters): YearState {
 	const newYear = state.year + 1;
+	const newAge = state.age + 1;
 
 	const compoundedInflation = state.compoundedInflation * (1 + params.inflationRate);
 	const compoundedInflationYearlyAverage =
@@ -132,21 +140,33 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const premiumPensionContributionPostInflation =
 		yearlyGrossPublicPensionContributingIncomePostInflation * params.premiumPensionContributionRate;
 
-	const incomePensionRights =
+	// Simplification: No new pension rights after pension age
+	const incomePensionRights = newAge <= params.statePensionAge ?
 		(state.incomePensionRights + incomePensionContributionPostInflation / 2) *
 			(1 + params.incomePensionRate) +
-		incomePensionContributionPostInflation / 2;
-	const premiumPensionRights =
+		incomePensionContributionPostInflation / 2 : state.incomePensionRights;
+	const premiumPensionRights = newAge <= params.statePensionAge ?
 		(state.premiumPensionRights + premiumPensionContributionPostInflation / 2) *
 			(1 + params.premiumPensionRate) +
-		premiumPensionContributionPostInflation / 2;
+			premiumPensionContributionPostInflation / 2 : state.premiumPensionRights;
 
-	// TODO: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
+	// Simplification: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
+	// Current we instead simulate arvsvinst by pretending that the pension is paid out based on life expectancy
+
+	// Jobbskatteavdrag: https://www.bjornlunden.se/skatt/jobbskatteavdrag__196
+
+	// grundavdrag https://www4.skatteverket.se/rattsligvagledning/27071.html?date=2024-01-01#section63-3
+	// api grundavdrag: https://skatteverket.entryscape.net/rowstore/dataset/ebbd8d70-9b9c-4327-b2ce-a371ee66744c/html
+
+	// Simplification: state pension payout is taxed as normal income
+	const accumulatedPensionRights = state.incomePensionRights + state.premiumPensionRights;
+	const grossPensionPayout = newAge > params.statePensionAge ? accumulatedPensionRights / (params.generalLifeExpectancy - params.statePensionAge): 0;
+
 
 	const yearlyGrossTaxableEarnedIncomePostInflation =
 		yearlyCashFlows
 			.filter(({ kind }) => kind === 'GrossTaxableEarnedIncome')
-			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) * compoundedInflationYearlyAverage;
+			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) * compoundedInflationYearlyAverage + grossPensionPayout;
 
 	const thisYearCountyTaxBracketRate =
 		params.countyTaxRate + (params.churchTax ? params.churchTaxRate : 0);
@@ -188,7 +208,8 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const newSavings = state.iskSavings + yearlyNetCashFlowPostInflation + iskInterest - iskTax;
 
 	return {
-		year: state.year + 1,
+		year: newYear,
+		age: newAge,
 		iskSavings: Math.floor(newSavings),
 		compoundedInflation: compoundedInflation,
 		cashFlow: yearlyNetCashFlowPostInflation,

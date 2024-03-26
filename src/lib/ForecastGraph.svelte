@@ -46,6 +46,11 @@
 		.x((d) => xScale(d.year))
 		.y((d) => yScale(d.cashFlow));
 
+	$: zeroLine = d3
+		.line<{ year: Date; cashFlow: number }>()
+		.x((d) => xScale(d.year))
+		.y((d) => yScale(0));
+
 	afterUpdate(() => {
 		const s = d3.select(svg);
 
@@ -76,6 +81,7 @@
 	<path d={savingsLine(data)} fill="none" stroke="steelblue" stroke-width="1.5" />
 	<path d={cashFlowLine(data)} fill="none" stroke="green" stroke-width="1.5" />
 	<path d={pensionRightsLine(data)} fill="none" stroke="red" stroke-width="1.5" />
+	<path d={zeroLine(data)} fill="none" stroke="grey" stroke-width="0.5" />
 </svg>
 
 <style>
