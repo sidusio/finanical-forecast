@@ -6,11 +6,19 @@
 	export let simulation: Array<YearState>;
 
 	$: data = simulation.map(
-		({ iskSavings, year, cashFlow, premiumPensionRights, incomePensionRights }) => ({
+		({
+			iskSavings,
+			year,
+			cashFlow,
+			premiumPensionRights,
+			incomePensionRights,
+			occupationalPensionSavings
+		}) => ({
 			year: new Date(year, 1),
 			savings: iskSavings,
 			cashFlow,
-			pensionRights: premiumPensionRights + incomePensionRights
+			pensionRights: premiumPensionRights + incomePensionRights,
+			pensionSavings: occupationalPensionSavings
 		})
 	);
 
@@ -35,6 +43,11 @@
 		.line<{ year: Date; savings: number }>()
 		.x((d) => xScale(d.year))
 		.y((d) => yScale(d.savings));
+
+	$: pensionSavingsLine = d3
+		.line<{ year: Date; pensionSavings: number }>()
+		.x((d) => xScale(d.year))
+		.y((d) => yScale(d.pensionSavings));
 
 	$: pensionRightsLine = d3
 		.line<{ year: Date; pensionRights: number }>()
@@ -81,6 +94,7 @@
 	<path d={savingsLine(data)} fill="none" stroke="steelblue" stroke-width="1.5" />
 	<path d={cashFlowLine(data)} fill="none" stroke="green" stroke-width="1.5" />
 	<path d={pensionRightsLine(data)} fill="none" stroke="red" stroke-width="1.5" />
+	<path d={pensionSavingsLine(data)} fill="none" stroke="blue" stroke-width="1.5" />
 	<path d={zeroLine(data)} fill="none" stroke="grey" stroke-width="0.5" />
 </svg>
 

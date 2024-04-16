@@ -15,7 +15,7 @@ export interface YearState {
 	cashFlow: number;
 	incomePensionRights: number;
 	premiumPensionRights: number;
-	//servicePensionSavings: number;
+	occupationalPensionSavings: number;
 }
 
 export interface Parameters {
@@ -36,16 +36,27 @@ export interface Parameters {
 	premiumPensionRate: number;
 	statePensionAge: number;
 	generalLifeExpectancy: number;
-
+	occupationalPensionInterestRate: number;
+	occupationalPensionAge: number;
+	occupationalPensionDuration: number;
 }
 
-export interface TimeBoundCashFlow {
+export type TimeBoundCashFlow = GrossTaxableEarnedIncome | NetExpense;
+
+interface BaseTimeBoundCashFlow {
 	startYear: number; // Inclusive
 	endYear?: number; // Exclusive
 	yearlyCashFlow: number;
-	kind: 'GrossTaxableEarnedIncome' | 'NetExpense';
-	publicPensionContributing: boolean; // Only used for GrossTaxableEarnedIncome
-	//servicePensionContribution: number;
+}
+
+interface GrossTaxableEarnedIncome extends BaseTimeBoundCashFlow {
+	kind: 'GrossTaxableEarnedIncome';
+	publicPensionContributing: boolean;
+	occupationalPensionContributionRate: number;
+}
+
+interface NetExpense extends BaseTimeBoundCashFlow {
+	kind: 'NetExpense';
 }
 
 export interface Scenario {
@@ -74,23 +85,23 @@ export function defaultScenario(): Scenario {
 			premiumPensionRate: 0.074,
 			statePensionAge: 70,
 			generalLifeExpectancy: 80,
+			occupationalPensionInterestRate: 0.07,
+			occupationalPensionAge: 65,
+			occupationalPensionDuration: 10,
 			cashFlows: [
 				{
 					startYear: currentYear,
-					endYear: currentYear + 9,
+					endYear: currentYear + 8,
 					yearlyCashFlow: 52000 * 12,
 					kind: 'GrossTaxableEarnedIncome',
-					publicPensionContributing: true
-					// servicePensionContribution: 4.5
+					publicPensionContributing: true,
+					occupationalPensionContributionRate: 0.045
 				},
 				{
 					startYear: currentYear,
 					endYear: undefined,
 					yearlyCashFlow: 15000 * 12,
-					kind: 'NetExpense',
-					publicPensionContributing: false
-					// publicPensionContributing: false,
-					// servicePensionContribution: 0
+					kind: 'NetExpense'
 				}
 			]
 		},
@@ -101,7 +112,8 @@ export function defaultScenario(): Scenario {
 			compoundedInflation: 1,
 			cashFlow: 0,
 			premiumPensionRights: 0,
-			incomePensionRights: 0
+			incomePensionRights: 0,
+			occupationalPensionSavings: 0
 		},
 		endYear: 2080
 	};
@@ -126,11 +138,12 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 
 	const yearlyGrossPublicPensionContributingIncomePostInflation =
 		Math.min(
-			yearlyCashFlows
-				.filter(
-					({ kind, publicPensionContributing }) =>
-						kind === 'GrossTaxableEarnedIncome' && publicPensionContributing
-				)
+			(
+				yearlyCashFlows.filter(
+					({ kind }) => kind === 'GrossTaxableEarnedIncome'
+				) as GrossTaxableEarnedIncome[]
+			)
+				.filter(({ publicPensionContributing }) => publicPensionContributing)
 				.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0),
 			params.publicPensionContributionThreshold
 		) * compoundedInflationYearlyAverage;
@@ -141,14 +154,18 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 		yearlyGrossPublicPensionContributingIncomePostInflation * params.premiumPensionContributionRate;
 
 	// Simplification: No new pension rights after pension age
-	const incomePensionRights = newAge <= params.statePensionAge ?
-		(state.incomePensionRights + incomePensionContributionPostInflation / 2) *
-			(1 + params.incomePensionRate) +
-		incomePensionContributionPostInflation / 2 : state.incomePensionRights;
-	const premiumPensionRights = newAge <= params.statePensionAge ?
-		(state.premiumPensionRights + premiumPensionContributionPostInflation / 2) *
-			(1 + params.premiumPensionRate) +
-			premiumPensionContributionPostInflation / 2 : state.premiumPensionRights;
+	const incomePensionRights =
+		newAge <= params.statePensionAge
+			? (state.incomePensionRights + incomePensionContributionPostInflation / 2) *
+					(1 + params.incomePensionRate) +
+				incomePensionContributionPostInflation / 2
+			: state.incomePensionRights;
+	const premiumPensionRights =
+		newAge <= params.statePensionAge
+			? (state.premiumPensionRights + premiumPensionContributionPostInflation / 2) *
+					(1 + params.premiumPensionRate) +
+				premiumPensionContributionPostInflation / 2
+			: state.premiumPensionRights;
 
 	// Simplification: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
 	// Current we instead simulate arvsvinst by pretending that the pension is paid out based on life expectancy
@@ -159,14 +176,46 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	// api grundavdrag: https://skatteverket.entryscape.net/rowstore/dataset/ebbd8d70-9b9c-4327-b2ce-a371ee66744c/html
 
 	// Simplification: state pension payout is taxed as normal income
-	const accumulatedPensionRights = state.incomePensionRights + state.premiumPensionRights;
-	const grossPensionPayout = newAge > params.statePensionAge ? accumulatedPensionRights / (params.generalLifeExpectancy - params.statePensionAge): 0;
+	const accumulatedPublicPensionRights = state.incomePensionRights + state.premiumPensionRights;
+	const grossPublicPensionPayout =
+		newAge > params.statePensionAge
+			? accumulatedPublicPensionRights / (params.generalLifeExpectancy - params.statePensionAge)
+			: 0;
 
+	const yearlyGrossOccupationalPensionContributionPostInflation =
+		(
+			yearlyCashFlows.filter(
+				({ kind }) => kind === 'GrossTaxableEarnedIncome'
+			) as GrossTaxableEarnedIncome[]
+		).reduce((acc, cf) => acc + cf.yearlyCashFlow * cf.occupationalPensionContributionRate, 0) *
+		compoundedInflationYearlyAverage;
+
+	const grossOccupationalPensionPayout =
+		state.age >= params.occupationalPensionAge &&
+		state.age < params.occupationalPensionAge + params.occupationalPensionDuration
+			? state.occupationalPensionSavings *
+				(1 / (params.occupationalPensionDuration + params.occupationalPensionAge - state.age))
+			: 0;
+
+	const accumulatedOccupationalPensionInterest =
+		(state.occupationalPensionSavings +
+			(yearlyGrossOccupationalPensionContributionPostInflation - grossOccupationalPensionPayout) /
+				2) *
+		params.occupationalPensionInterestRate;
+
+	const accumulatedOccupationalPensionSavings =
+		state.occupationalPensionSavings +
+		yearlyGrossOccupationalPensionContributionPostInflation +
+		accumulatedOccupationalPensionInterest -
+		grossOccupationalPensionPayout;
 
 	const yearlyGrossTaxableEarnedIncomePostInflation =
 		yearlyCashFlows
 			.filter(({ kind }) => kind === 'GrossTaxableEarnedIncome')
-			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) * compoundedInflationYearlyAverage + grossPensionPayout;
+			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0) *
+			compoundedInflationYearlyAverage +
+		grossPublicPensionPayout +
+		grossOccupationalPensionPayout;
 
 	const thisYearCountyTaxBracketRate =
 		params.countyTaxRate + (params.churchTax ? params.churchTaxRate : 0);
@@ -196,12 +245,6 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const yearlyNetCashFlowPostInflation =
 		yearlyNetIncomePostInflation - yearlyNetExpensePostInflation;
 
-	// const publicPensionContributingCashFlows = yearlyCashFlows.filter(cf => cf.publicPensionContributing);
-	// const publicPensionContributingCashFlow = publicPensionContributingCashFlows.reduce((acc, cf) => acc + cf.yearlyNetCashFlow, 0);
-
-	// const yearlyIncomePensionRights = publicPensionContributingCashFlow * 0.16; // TODO: This should be calculated
-	// const yearlyPremiumPensionRights = publicPensionContributingCashFlow * 0.025;
-
 	const iskSavingsYearlyAverage = state.iskSavings + yearlyNetCashFlowPostInflation / 2;
 	const iskInterest = iskSavingsYearlyAverage * params.iskInterestRate;
 	const iskTax = iskSavingsYearlyAverage * params.iskTax;
@@ -214,8 +257,8 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 		compoundedInflation: compoundedInflation,
 		cashFlow: yearlyNetCashFlowPostInflation,
 		incomePensionRights: incomePensionRights,
-		premiumPensionRights: premiumPensionRights
-		// servicePensionSavings: state.servicePensionSavings,
+		premiumPensionRights: premiumPensionRights,
+		occupationalPensionSavings: accumulatedOccupationalPensionSavings
 	};
 }
 
