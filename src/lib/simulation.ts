@@ -120,8 +120,8 @@ export function defaultScenario(): Scenario {
 }
 
 function simulateYear(state: YearState, params: Parameters): YearState {
-	const newYear = state.year + 1;
-	const newAge = state.age + 1;
+	const year = state.year + 1;
+	const age = state.age + 1;
 
 	const compoundedInflation = state.compoundedInflation * (1 + params.inflationRate);
 	const compoundedInflationYearlyAverage =
@@ -131,83 +131,48 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const thisYearsTaxFreeThreshold = params.taxFreeThreshold * compoundedInflationYearlyAverage;
 
 	const yearlyCashFlows = params.cashFlows.filter(({ startYear, endYear }) => {
-		if (startYear > newYear) return false;
+		if (startYear > year) return false;
 		if (endYear === undefined) return true;
-		return endYear > newYear;
+		return endYear > year;
 	});
 
-	const yearlyGrossPublicPensionContributingIncomePostInflation =
-		Math.min(
-			(
-				yearlyCashFlows.filter(
-					({ kind }) => kind === 'GrossTaxableEarnedIncome'
-				) as GrossTaxableEarnedIncome[]
-			)
-				.filter(({ publicPensionContributing }) => publicPensionContributing)
-				.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0),
-			params.publicPensionContributionThreshold
-		) * compoundedInflationYearlyAverage;
+	const inflationAdjustedCashFlows = yearlyCashFlows.map((cf) => {
+		return {
+			...cf,
+			yearlyCashFlow: cf.yearlyCashFlow * compoundedInflationYearlyAverage
+		};
+	});
 
-	const incomePensionContributionPostInflation =
-		yearlyGrossPublicPensionContributingIncomePostInflation * params.incomePensionContributionRate;
-	const premiumPensionContributionPostInflation =
-		yearlyGrossPublicPensionContributingIncomePostInflation * params.premiumPensionContributionRate;
+	const {
+		grossPayout: grossPublicPensionPayout,
+		outgoingRights: { incomePension: incomePensionRights, premiumPension: premiumPensionRights }
+	} = simulatePublicPension({
+		cashFlows: inflationAdjustedCashFlows,
+		ingoingRights: {
+			incomePension: state.incomePensionRights,
+			premiumPension: state.premiumPensionRights
+		},
+		contributionThreshold: params.publicPensionContributionThreshold,
+		incomePensionContributionRate: params.incomePensionContributionRate,
+		premiumPensionContributionRate: params.premiumPensionContributionRate,
+		age: age,
+		pensionAge: params.statePensionAge,
+		incomePensionInterestRate: params.incomePensionRate,
+		premiumPensionInterestRate: params.premiumPensionRate,
+		generalLifeExpectancy: params.generalLifeExpectancy
+	});
 
-	// Simplification: No new pension rights after pension age
-	const incomePensionRights =
-		newAge <= params.statePensionAge
-			? (state.incomePensionRights + incomePensionContributionPostInflation / 2) *
-					(1 + params.incomePensionRate) +
-				incomePensionContributionPostInflation / 2
-			: state.incomePensionRights;
-	const premiumPensionRights =
-		newAge <= params.statePensionAge
-			? (state.premiumPensionRights + premiumPensionContributionPostInflation / 2) *
-					(1 + params.premiumPensionRate) +
-				premiumPensionContributionPostInflation / 2
-			: state.premiumPensionRights;
-
-	// Simplification: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
-	// Current we instead simulate arvsvinst by pretending that the pension is paid out based on life expectancy
-
-	// Jobbskatteavdrag: https://www.bjornlunden.se/skatt/jobbskatteavdrag__196
-
-	// grundavdrag https://www4.skatteverket.se/rattsligvagledning/27071.html?date=2024-01-01#section63-3
-	// api grundavdrag: https://skatteverket.entryscape.net/rowstore/dataset/ebbd8d70-9b9c-4327-b2ce-a371ee66744c/html
-
-	// Simplification: state pension payout is taxed as normal income
-	const accumulatedPublicPensionRights = state.incomePensionRights + state.premiumPensionRights;
-	const grossPublicPensionPayout =
-		newAge > params.statePensionAge
-			? accumulatedPublicPensionRights / (params.generalLifeExpectancy - params.statePensionAge)
-			: 0;
-
-	const yearlyGrossOccupationalPensionContributionPostInflation =
-		(
-			yearlyCashFlows.filter(
-				({ kind }) => kind === 'GrossTaxableEarnedIncome'
-			) as GrossTaxableEarnedIncome[]
-		).reduce((acc, cf) => acc + cf.yearlyCashFlow * cf.occupationalPensionContributionRate, 0) *
-		compoundedInflationYearlyAverage;
-
-	const grossOccupationalPensionPayout =
-		state.age >= params.occupationalPensionAge &&
-		state.age < params.occupationalPensionAge + params.occupationalPensionDuration
-			? state.occupationalPensionSavings *
-				(1 / (params.occupationalPensionDuration + params.occupationalPensionAge - state.age))
-			: 0;
-
-	const accumulatedOccupationalPensionInterest =
-		(state.occupationalPensionSavings +
-			(yearlyGrossOccupationalPensionContributionPostInflation - grossOccupationalPensionPayout) /
-				2) *
-		params.occupationalPensionInterestRate;
-
-	const accumulatedOccupationalPensionSavings =
-		state.occupationalPensionSavings +
-		yearlyGrossOccupationalPensionContributionPostInflation +
-		accumulatedOccupationalPensionInterest -
-		grossOccupationalPensionPayout;
+	const {
+		outgoingBalance: occupationalPensionSavings,
+		grossPayout: grossOccupationalPensionPayout
+	} = simulateOccupationalPensionYear({
+		ingoingBalance: state.occupationalPensionSavings,
+		cashFlows: inflationAdjustedCashFlows,
+		age: age,
+		pensionAge: params.occupationalPensionAge,
+		pensionDuration: params.occupationalPensionDuration,
+		interestRate: params.occupationalPensionInterestRate
+	});
 
 	const yearlyGrossTaxableEarnedIncomePostInflation =
 		yearlyCashFlows
@@ -245,20 +210,155 @@ function simulateYear(state: YearState, params: Parameters): YearState {
 	const yearlyNetCashFlowPostInflation =
 		yearlyNetIncomePostInflation - yearlyNetExpensePostInflation;
 
-	const iskSavingsYearlyAverage = state.iskSavings + yearlyNetCashFlowPostInflation / 2;
-	const iskInterest = iskSavingsYearlyAverage * params.iskInterestRate;
-	const iskTax = iskSavingsYearlyAverage * params.iskTax;
-	const newSavings = state.iskSavings + yearlyNetCashFlowPostInflation + iskInterest - iskTax;
+	const { outgoingBalance: iskSavings } = simulateISKYear({
+		ingoingBalance: state.iskSavings,
+		interestRate: params.iskInterestRate,
+		taxRate: params.iskTax,
+		deposit: yearlyNetCashFlowPostInflation
+	});
 
 	return {
-		year: newYear,
-		age: newAge,
-		iskSavings: Math.floor(newSavings),
-		compoundedInflation: compoundedInflation,
+		year,
+		age,
+		iskSavings,
+		compoundedInflation,
 		cashFlow: yearlyNetCashFlowPostInflation,
-		incomePensionRights: incomePensionRights,
-		premiumPensionRights: premiumPensionRights,
-		occupationalPensionSavings: accumulatedOccupationalPensionSavings
+		incomePensionRights,
+		premiumPensionRights,
+		occupationalPensionSavings
+	};
+}
+
+function simulatePublicPension({
+	cashFlows,
+	ingoingRights,
+	contributionThreshold,
+	premiumPensionContributionRate,
+	incomePensionContributionRate,
+	age,
+	pensionAge,
+	incomePensionInterestRate,
+	premiumPensionInterestRate,
+	generalLifeExpectancy
+}: {
+	cashFlows: TimeBoundCashFlow[]; // Inflation adjusted before passed to this function
+	ingoingRights: { incomePension: number; premiumPension: number };
+	contributionThreshold: number;
+	incomePensionContributionRate: number;
+	premiumPensionContributionRate: number;
+	age: number;
+	pensionAge: number;
+	incomePensionInterestRate: number;
+	premiumPensionInterestRate: number;
+	generalLifeExpectancy: number;
+}): { outgoingRights: { incomePension: number; premiumPension: number }; grossPayout: number } {
+	const grossContributingIncome = Math.min(
+		(
+			cashFlows.filter(
+				({ kind }) => kind === 'GrossTaxableEarnedIncome'
+			) as GrossTaxableEarnedIncome[]
+		)
+			.filter(({ publicPensionContributing }) => publicPensionContributing)
+			.reduce((acc, cf) => acc + cf.yearlyCashFlow, 0),
+		contributionThreshold
+	);
+
+	const incomePensionContribution = grossContributingIncome * incomePensionContributionRate;
+	const premiumPensionContribution = grossContributingIncome * premiumPensionContributionRate;
+
+	const incomePensionInterest =
+		(ingoingRights.incomePension + incomePensionContribution / 2) * incomePensionInterestRate;
+	const outgoingIncomePensionRights =
+		age <= pensionAge
+			? ingoingRights.incomePension + incomePensionInterest + incomePensionContribution
+			: ingoingRights.incomePension;
+
+	// Simplification: No new pension rights after pension age
+	const premiumPensionInterest =
+		(ingoingRights.premiumPension + premiumPensionContribution / 2) * premiumPensionInterestRate;
+	const outgoingPremiumPensionRights =
+		age <= pensionAge
+			? ingoingRights.premiumPension + premiumPensionInterest + premiumPensionContribution
+			: ingoingRights.premiumPension;
+
+	// Simplification: arvsvinst: https://www.pensionsmyndigheten.se/statistik/publikationer/orange-rapport-2021/a-berakningsfaktorer.html
+	// Current we instead simulate arvsvinst by pretending that the pension is paid out based on life expectancy
+
+	// Jobbskatteavdrag: https://www.bjornlunden.se/skatt/jobbskatteavdrag__196
+
+	// grundavdrag https://www4.skatteverket.se/rattsligvagledning/27071.html?date=2024-01-01#section63-3
+	// api grundavdrag: https://skatteverket.entryscape.net/rowstore/dataset/ebbd8d70-9b9c-4327-b2ce-a371ee66744c/html
+
+	// Simplification: state pension payout is taxed as normal income
+	const grossPayout =
+		age > pensionAge
+			? (outgoingIncomePensionRights + outgoingPremiumPensionRights) /
+				(generalLifeExpectancy - pensionAge)
+			: 0;
+
+	return {
+		outgoingRights: {
+			incomePension: outgoingIncomePensionRights,
+			premiumPension: outgoingPremiumPensionRights
+		},
+		grossPayout: grossPayout
+	};
+}
+
+function simulateOccupationalPensionYear({
+	ingoingBalance,
+	cashFlows,
+	age,
+	pensionAge,
+	pensionDuration,
+	interestRate
+}: {
+	ingoingBalance: number;
+	cashFlows: TimeBoundCashFlow[]; // Inflation adjusted before passed to this function
+	age: number;
+	pensionAge: number;
+	pensionDuration: number;
+	interestRate: number;
+}): {
+	outgoingBalance: number;
+	grossPayout: number;
+} {
+	const contribution = (
+		cashFlows.filter(
+			({ kind }) => kind === 'GrossTaxableEarnedIncome'
+		) as GrossTaxableEarnedIncome[]
+	).reduce((acc, cf) => acc + cf.yearlyCashFlow * cf.occupationalPensionContributionRate, 0);
+
+	const grossPayout =
+		age >= pensionAge && age < pensionAge + pensionDuration
+			? ingoingBalance * (1 / (pensionDuration + pensionAge - age))
+			: 0;
+
+	const interest = (ingoingBalance + (contribution - grossPayout) / 2) * interestRate;
+
+	const outgoingBalance = ingoingBalance + contribution + interest - grossPayout;
+
+	return { outgoingBalance, grossPayout };
+}
+
+function simulateISKYear({
+	ingoingBalance,
+	interestRate,
+	taxRate,
+	deposit
+}: {
+	ingoingBalance: number;
+	interestRate: number;
+	taxRate: number;
+	deposit: number;
+}): { outgoingBalance: number } {
+	const iskSavingsYearlyAverage = ingoingBalance + deposit / 2;
+	const iskInterest = iskSavingsYearlyAverage * interestRate;
+	const iskTax = iskSavingsYearlyAverage * taxRate;
+	const newSavings = ingoingBalance + deposit + iskInterest - iskTax;
+
+	return {
+		outgoingBalance: Math.floor(newSavings)
 	};
 }
 
