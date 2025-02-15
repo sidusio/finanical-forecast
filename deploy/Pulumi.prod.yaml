@@ -1,2 +1,4 @@
+secretsprovider: gcpkms://projects/noted-falcon-394809/locations/global/keyRings/sidus-pulumi-keyring/cryptoKeys/financial-forecast
+encryptedkey: CiQAg4mo0HDjnj/iQe1cHNoXZgjH4JDGy8eb/9hMTxU2C+vzc+gSSQB7vwX87qjjQVAKT7bmiXyHQNeGXwhLNt8s48ghjwgN2+oWaDZzLVe5xxcFUR9H57x42SgLXMbK7AnUR97Pi9f8aqEBcHtCDUw=
 config:
   gcp:project: noted-falcon-394809
